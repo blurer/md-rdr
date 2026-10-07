@@ -29,6 +29,12 @@ def main():
         action="store_true",
         help="Don't automatically open browser",
     )
+    parser.add_argument(
+        "-t", "--lifetime",
+        type=float,
+        default=5.0,
+        help="Seconds until the server shuts down (default: 5)",
+    )
 
     args = parser.parse_args()
     path = Path(args.path).resolve()
@@ -48,4 +54,5 @@ def main():
         print(f"mdr: error: {args.path} is not a file or directory", file=sys.stderr)
         sys.exit(1)
 
-    serve(path, mode, port=args.port, open_browser=not args.no_open)
+    serve(path, mode, port=args.port, open_browser=not args.no_open,
+          lifetime=args.lifetime)

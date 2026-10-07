@@ -1,17 +1,13 @@
 """HTTP server for rendering markdown files."""
 
 import json
-import sys
 import threading
-import time
 import webbrowser
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import unquote
-
-_IDLE_TIMEOUT = 10  # seconds with no requests before auto-shutdown
 
 from mdr.renderer import render_markdown, render_directory
 
@@ -23,7 +19,6 @@ class MdrServer(ThreadingMixIn, HTTPServer):
     def __init__(self, server_address, handler_class, *, path: Path, mode: str):
         self.target_path = path
         self.mode = mode  # "file" or "directory"
-        self.last_request_time = time.monotonic()
         super().__init__(server_address, handler_class)
 
 
@@ -37,7 +32,6 @@ class MdrHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        self.server.last_request_time = time.monotonic()
         path = unquote(self.path)
 
         if path == "/api/mtime":
@@ -149,30 +143,20 @@ def _is_safe_path(base: Path, target: Path) -> bool:
         return False
 
 
-def serve(path: Path, mode: str, port: int = 0, open_browser: bool = True):
-    """Start the mdr server and optionally open a browser."""
+def serve(path: Path, mode: str, port: int = 0, open_browser: bool = True,
+          lifetime: float = 5.0):
+    """Start the mdr server and shut it down after `lifetime` seconds."""
     server = MdrServer(("127.0.0.1", port), MdrHandler, path=path, mode=mode)
     host, actual_port = server.server_address
 
     url = f"http://127.0.0.1:{actual_port}"
-    print(f"mdr serving {path} at {url}")
+    print(f"mdr serving {path} at {url} (shuts down after {lifetime:g}s)")
     print("Press Ctrl+C to stop")
 
     if open_browser:
         webbrowser.open(url)
 
-    # Watchdog: shut down when no requests received for _IDLE_TIMEOUT seconds
-    def _watchdog():
-        while True:
-            time.sleep(2)
-            idle = time.monotonic() - server.last_request_time
-            if idle >= _IDLE_TIMEOUT:
-                print("\nNo active clients, shutting down.")
-                server.shutdown()
-                return
-
-    watchdog = threading.Thread(target=_watchdog, daemon=True)
-    watchdog.start()
+    threading.Timer(lifetime, server.shutdown).start()
 
     try:
         server.serve_forever()
